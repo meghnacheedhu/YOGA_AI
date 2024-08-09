@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yoga Chatbot</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="chat-container">
+      <h1>Yoga Chatbot</h1>
+      <div class="chat-box" id="chat-box"></div>
+      <input
+        type="text"
+        id="user-input"
+        placeholder="Type your message here..."
+      />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+      function sendMessage() {
+        const userInput = document.getElementById("user-input").value;
+        if (userInput.trim() === "") return;
+
+        const chatBox = document.getElementById("chat-box");
+        const userMessage = document.createElement("div");
+        userMessage.className = "message user-message";
+        userMessage.textContent = userInput;
+        chatBox.appendChild(userMessage);
+
+        fetch("http://127.0.0.1:5000/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_input: userInput }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            console.log(data);
+            const botMessage = document.createElement("div");
+            botMessage.className = "message bot-message";
+            botMessage.textContent = data.response;
+            chatBox.appendChild(botMessage);
+            chatBox.scrollTop = chatBox.scrollHeight;
+          });
+
+        document.getElementById("user-input").value = "";
+      }
+    </script>
+  </body>
+</html>
