@@ -4,8 +4,16 @@ import pandas as pd
 import string
 import requests
 import openai
+from openai import OpenAI
 import json  # Add this import
 import os
+from langchain_openai import ChatOpenAI    
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
+from langchain.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
+
+
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})  
@@ -13,178 +21,116 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Initialize OpenAI API
 openai.api_key = 'sk-proj-8a9w7OBzK7UIcZE2jG0KT3BlbkFJ0GyTixefesS24uAJqpyK'
 
-# Load and process data
-url = "https://pocketyoga.com/poses.json"
-response = requests.get(url)
-if response.status_code == 200:
-    data = response.json()
-    processed_data = []
-    for pose in data:
-        pose_data = {
-            'Display Name': pose.get('display_name', 'N/A'),
-            'Name': pose.get('name', 'N/A'),
-            'Category': pose.get('category', 'N/A'),
-            'Sub Category': pose.get('subcategory', 'N/A'),
-            'Difficulty': pose.get('difficulty', 'N/A'),
-            'Benefits': pose.get('benefits', 'N/A'),
-            'Description': pose.get('description', 'N/A'),
-            'Preferred Side': pose.get('preferred_side', 'N/A'),
-        }
-        processed_data.append(pose_data)
-    df = pd.DataFrame(processed_data)
-    df_cleaned = df.dropna()
-    keywords = {
-        'arms': 'arms',
-        'hips': 'hips',
-        'legs': 'legs',
-        'hip': 'hip',
-        'shoulders': 'shoulders',
-        'pelvis': 'pelvis',
-        'ankles': 'ankles',
-        'core': 'core',
-        'spine': 'spine',
-        'rib cage': 'rib cage',
-        'back': 'back',
-        'hamstrings': 'hamstrings',
-        'knees': 'knees',
-        'thighs': 'thighs',
-        'chest': 'chest',
-        'neck': 'neck',
-        'feet': 'feet',
-        'calves': 'calves',
-        'wrists': 'wrists',
-        'hands': 'hands',
-        'glutes': 'glutes'
+## code carried over from chat project
+
+template = open("prompt.txt", "r").read()
+# final_template = open("final_prompt.txt", "r").read()
+
+openai = OpenAI(api_key="sk-proj-nr7QgNS49pB81YgvSFQ2T3BlbkFJaKl0ZVAgZVBF6w1sJk1U")
+
+PROMPT = PromptTemplate(
+    template=template, input_variables=["context", "question", "history"]
+)
+
+conversation = [
+    {
+        "role": "system",
+        "content": "You are a helpful and knowledgeable yoga instructor."
     }
-    def extract_keywords(benefits, keywords):
-        if benefits is None:
-            return None
-        found_keywords = [muscle for muscle in keywords if muscle in benefits.lower()]
-        return ', '.join(found_keywords) if found_keywords else None
+]
 
-    df_cleaned.loc[:, 'Body Part Strengthened'] = df_cleaned['Benefits'].apply(lambda x: extract_keywords(x, keywords))
-    df = df_cleaned.dropna()
-    df = df.apply(lambda x: x.str.lower().str.translate(str.maketrans('', '', string.punctuation)) if x.dtype == "object" else x)
-else:
-    print(f"Failed to retrieve the JSON data. Status code: {response.status_code}")
+index_name = 'yogi-index'
 
-null_counts = df_cleaned.isnull().sum()
-df = df_cleaned.dropna()
-df = df.applymap(lambda x: x.lower().translate(str.maketrans('', '', string.punctuation))if isinstance(x, str) else x)
+# os.environ['OPENAI_API_KEY'] = 'sk-proj-8a9w7OBzK7UIcZE2jG0KT3BlbkFJ0GyTixefesS24uAJqpyK'
+os.environ['OPENAI_API_KEY'] = 'sk-proj-nr7QgNS49pB81YgvSFQ2T3BlbkFJaKl0ZVAgZVBF6w1sJk1U' #faizaasn
+os.environ['PINECONE_API_KEY'] = 'afbc2bbb-86df-4e62-8e56-4fc2e2a5d765'
 
-# Outputs the unique values in Category Column
-unique_values = df['Category'].unique()
+vectorstore = PineconeVectorStore.from_existing_index(
+    index_name, 
+    embedding=OpenAIEmbeddings()
+)
 
-df_seated = df[df['Category'] == 'seated']
-df_armlegsupport = df[df['Category'] == 'armlegsupport']
-df_supine = df[df['Category'] == 'supine']
-df_standing = df[df['Category'] == 'standing']
-df_prone = df[df['Category'] == 'prone']
-df_armbalanceandinversion = df[df['Category'] == 'armbalanceandinversion']
+llm = ChatOpenAI(
+    model='gpt-4',
+    temperature=0
+)
 
-# Converts dfs into a json file
-df_seated.to_json('Seated.json', orient='records', lines=True)
-df_armlegsupport.to_json('Armlegsupport.json', orient='records', lines=True)
-df_supine.to_json('Supine.json', orient='records', lines=True)
-df_standing.to_json('Standing.json', orient='records', lines=True)
-df_prone.to_json('Prone.json', orient='records', lines=True)
-df_armbalanceandinversion.to_json('Armbalanceandinversion.json', orient='records', lines=True)
+llm_finetuning = ChatOpenAI(
+    model='ft:gpt-3.5-turbo-1106:personal:yogabot:9sCLNZ7V',
+    temperature=0
+)
+allMessages = []
+allUserMessages = []
 
-# Function to find errors in the JSON file
-def inspect_json_file(json_file):
-    try:
-        with open(json_file, 'r') as file:
-            content = file.read()
-            print(content)
-            data = json.loads(content)  # Parses JSON file
-            print(data)
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {e}")
+# openai = OpenAI(
+#     api_key = 'sk-proj-8a9w7OBzK7UIcZE2jG0KT3BlbkFJ0GyTixefesS24uAJqpyK'
+# )
 
-inspect_json_file('Seated.json')
-inspect_json_file('Armlegsupport.json')
-inspect_json_file('Supine.json')
-inspect_json_file('Standing.json')
-inspect_json_file('Prone.json')
-inspect_json_file('Armbalanceandinversion.json')
+def get_finetuning_response(user_input):
+    message = {
+        "role": "user",
+        "content": user_input
+    }
+    
+    conversation.append(message)
+    
+    response = openai.chat.completions.create(
+        messages=conversation,
+        model="ft:gpt-3.5-turbo-1106:personal:yogabot:9sCLNZ7V",
+    )
+    
+    response_text = response.choices[0].message.content
+    conversation.append({"role": "assistant", "content": response_text})
+    
+    # Delete the previous audio file if it exists
+    audio_file = "output.mp3"
+    if os.path.exists(audio_file):
+        os.remove(audio_file)
+    
+    # Convert the response text to speech using OpenAI TTS
+    tts_response = openai.audio.speech.create(
+        model="tts-1",
+        voice="shimmer",
+        input=response_text,
+    )
+    
+    # Stream the response to a file
+    with open(audio_file, "wb") as f:
+        f.write(tts_response.content)
+    
+    return response_text
 
-# This function converts the JSON file into a readable format for md conversion
-def load_multiple_json_objects(file_path):
-    with open(file_path, 'r') as file:
-        content = file.read()
-        json_objects = content.splitlines()
-        data = []
-        for obj in json_objects:
-            if obj.strip():
-                try:
-                    data.append(json.loads(obj))
-                except json.JSONDecodeError as e:
-                    print(f"Skipping invalid JSON object: {obj}\nError: {e}")
-        return data
+# def get_final_response(user_input):
+#     qa = RetrievalQA.from_chain_type(
+#         llm=llm_finetuning, 
+#         chain_type="stuff",
+#         retriever=vectorstore.as_retriever(),
+#         chain_type_kwargs={"prompt": PROMPT} 
+#     )
+#     return qa.invoke(user_input)['result'] 
 
-# This function converts JSON file into a Markdown file
-def json_to_markdown_list(json_file, output_file):
-    data = load_multiple_json_objects(json_file)
-    base_name = os.path.basename(json_file)
-    title = os.path.splitext(base_name)[0]
-
-    with open(output_file, 'w') as file:
-        file.write(f"{title} Poses\n\n")
-        for item in data:
-            file.write(f"Name: {item.get('Name', 'N/A')}\n")
-            file.write(f"Category: {item.get('Category', 'N/A')}\n")
-            file.write(f"Body Part Strengthened: {item.get('Body Part Strengthened', 'N/A')}\n\n")
-            file.write(f"Difficulty: {item.get('Difficulty', 'N/A')}\n\n")
-            file.write(f"Benefits: {item.get('Benefits', 'N/A')}\n\n")
-            file.write(f"Description: {item.get('Description', 'N/A')}\n\n")
-            file.write(f"Next Position: {item.get('Next Position', 'N/A')}\n\n")
-
-# Applies function to 'yoga_poses_cleaned.json' file and outputs as 'yoga_poses_list.md'
-json_to_markdown_list('Seated.json', 'df_seated.md')
-json_to_markdown_list('Armlegsupport.json', 'df_armlegsupport.md')
-json_to_markdown_list('Supine.json', 'df_supine.md')
-json_to_markdown_list('Standing.json', 'df_standing.md')
-json_to_markdown_list('Prone.json', 'df_prone.md')
-json_to_markdown_list('Armbalanceandinversion.json', 'df_armbalanceandinversion.md')
-
-# Fetch data from DataFrame
-def fetch_data_from_df(user_input):
-    relevant_poses = []
-    for _, row in df.iterrows():
-        if "beginner" in user_input.lower() and row['Difficulty'].lower() != "beginner":
-            continue
-        if "intermediate" in user_input.lower() and row['Difficulty'].lower() != "intermediate":
-            continue
-        if "expert" in user_input.lower() and row['Difficulty'].lower() != "expert":
-            continue
-        if "flexibility" in user_input.lower() and "flexibility" not in row['Benefits'].lower():
-            continue
-        relevant_poses.append({'Name': row['Name']})
-    return relevant_poses
-
-# Get response from OpenAI API
 def get_gpt_response(user_input):
-    messages = [
-        {"role": "system", "content": "You are a helpful and knowledgeable yoga instructor."},
-        {"role": "user", "content": user_input}
-    ]
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages
+        qa = RetrievalQA.from_chain_type(
+            llm=llm, 
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever(),
+            chain_type_kwargs={"prompt": PROMPT} 
         )
-        print(response)
-        return response['choices'][0]['message']['content']
     except Exception as e:
-        print(f"Error communicating with OpenAI: {e}")
-        return "Sorry, I'm having trouble processing your request right now."
+        print(f"Error creating LLM: {e}")
+        return "Sorry, I'm having trouble processing your request right now."   
+    return qa.invoke(user_input)['result'] 
 
+
+##Below is the endpoints
 @app.route('/')
 def home():
     return render_template('index.html')
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    print('it works here')
     user_input = request.get_json().get('user_input', '')
     print(f"User Input: {user_input}")  
     response = get_gpt_response(user_input)
