@@ -44,7 +44,7 @@ openai = OpenAI(api_key="sk-proj-nr7QgNS49pB81YgvSFQ2T3BlbkFJaKl0ZVAgZVBF6w1sJk1
 conversation = [
     {
         "role": "system",
-        "content": "You are a helpful and knowledgeable yoga instructor."
+        "content": "You are a helpful and knowledgeable yoga instructor that will create a yoga flow with the given 5 yoga positions."
     }
 ]
 
@@ -76,12 +76,9 @@ allUserMessages = []
 #     api_key = 'sk-proj-8a9w7OBzK7UIcZE2jG0KT3BlbkFJ0GyTixefesS24uAJqpyK'
 # )
 def get_gpt_response_finetuned(user_input):
-    prompt = "you are a yoga instructor. use these 5 yoga poses to create a yoga flow "
-    fake_user_input = prompt +  "1. child pose 2. downward dog 3. warrior 1 4. warrior 2 5. warrior 3 "
-
     message = {
         "role": "user",
-        "content": fake_user_input
+        "content": user_input 
     }
     
     conversation.append(message)
@@ -104,7 +101,7 @@ def get_final_response(user_input):
         "content": user_input,
     }
     allMessages.append(message)
-    allMessages.append({"role":"system", "content":"you are yoga instructor. Create a list of 5 yoga poses that will help the user with their physical pains and aches. the format should be 1. 'pose 1' 2. 'pose 2' ... Only provide a list of yoga poses."})
+    allMessages.append({"role":"system", "content":"you are yoga instructor. Create a list of 5 yoga poses that will help the user with their physical pains and aches. the format should be 1. pose 1 2. pose 2 ... Only provide a list of yoga poses."})
 
     response = openai.chat.completions.create(
         messages=allMessages,
@@ -134,8 +131,6 @@ def get_final_response(user_input):
 #     qa_prompt = ChatPromptTemplate.from_messages(messages)
 #     try:
 #         qa = ConversationalRetrievalChain.from_llm(
-
-
 #             llm=llm, 
 #             chain_type="stuff",
 #             retriever=vectorstore.as_retriever(),
